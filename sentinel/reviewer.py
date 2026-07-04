@@ -115,7 +115,7 @@ def build_review(result: IngestResult, diff: str = "") -> str:
 
     from sentinel.kiwi_cli import get_llm_client, ask_llm
 
-    provider, client, model = get_llm_client()
+    provider, client = get_llm_client()
     if not provider or not client:
         return fallback_review(result)
 
@@ -123,7 +123,7 @@ def build_review(result: IngestResult, diff: str = "") -> str:
             f"Recalled history from memory (may be empty):\n{result.history or '(none)'}\n\n"
             f"Diff of the triggering change:\n{diff or '(unavailable)'}")
 
-    draft = ask_llm(provider, client, user, SYSTEM, model)
+    draft = ask_llm(provider, client, user, SYSTEM)
     if not draft or draft.startswith("Error communicating"):
         return fallback_review(result)
 

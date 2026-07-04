@@ -1,0 +1,84 @@
+<svg viewBox="0 0 900 720" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4b5a4e"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="720" fill="#fdfcf7"/>
+
+  <!-- Entry surfaces -->
+  <text x="450" y="36" text-anchor="middle" font-size="15" font-weight="700" fill="#33402f" letter-spacing="1">ENTRY SURFACES</text>
+
+  <g>
+    <rect x="60" y="54" width="220" height="60" rx="10" fill="#eef5e6" stroke="#8bab6e" stroke-width="1.5"/>
+    <text x="170" y="80" text-anchor="middle" font-size="14" font-weight="600" fill="#2f3b2a">uv run kiwi</text>
+    <text x="170" y="100" text-anchor="middle" font-size="12" fill="#5c6b55">Interactive REPL</text>
+  </g>
+
+  <g>
+    <rect x="340" y="54" width="220" height="60" rx="10" fill="#eef5e6" stroke="#8bab6e" stroke-width="1.5"/>
+    <text x="450" y="80" text-anchor="middle" font-size="14" font-weight="600" fill="#2f3b2a">sentinel CLI</text>
+    <text x="450" y="100" text-anchor="middle" font-size="12" fill="#5c6b55">seed / ingest / confirm / forget</text>
+  </g>
+
+  <g>
+    <rect x="620" y="54" width="220" height="60" rx="10" fill="#eef5e6" stroke="#8bab6e" stroke-width="1.5"/>
+    <text x="730" y="80" text-anchor="middle" font-size="14" font-weight="600" fill="#2f3b2a">CI workflow</text>
+    <text x="730" y="100" text-anchor="middle" font-size="12" fill="#5c6b55">.github/workflows/sentinel.yml</text>
+  </g>
+
+  <!-- code files -->
+  <g>
+    <rect x="60" y="150" width="220" height="46" rx="8" fill="#ffffff" stroke="#b7c7ac" stroke-width="1.2"/>
+    <text x="170" y="178" text-anchor="middle" font-size="12.5" font-family="Consolas, monospace" fill="#3a463a">sentinel/kiwi_cli.py</text>
+  </g>
+  <g>
+    <rect x="340" y="150" width="220" height="46" rx="8" fill="#ffffff" stroke="#b7c7ac" stroke-width="1.2"/>
+    <text x="450" y="178" text-anchor="middle" font-size="12.5" font-family="Consolas, monospace" fill="#3a463a">sentinel/cli.py</text>
+  </g>
+
+  <!-- Connector: kiwi_cli + cli.py -> cognee_client -->
+  <path d="M170,196 L170,230 L450,230 L450,258" fill="none" stroke="#4b5a4e" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M450,196 L450,258" fill="none" stroke="#4b5a4e" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M730,114 L730,230 L450,230" fill="none" stroke="#4b5a4e" stroke-width="1.6"/>
+
+  <!-- entry surface -> code files arrows -->
+  <path d="M170,114 L170,150" fill="none" stroke="#4b5a4e" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M450,114 L450,150" fill="none" stroke="#4b5a4e" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Cognee client -->
+  <rect x="290" y="258" width="320" height="72" rx="10" fill="#e7f0fb" stroke="#7ea3d1" stroke-width="1.5"/>
+  <text x="450" y="284" text-anchor="middle" font-size="14" font-weight="600" fill="#20344f">sentinel/cognee_client.py</text>
+  <text x="450" y="304" text-anchor="middle" font-size="12" font-family="Consolas, monospace" fill="#3c567e">POST /api/v1/remember  ·  POST /api/v1/recall</text>
+  <text x="450" y="320" text-anchor="middle" font-size="11" fill="#5c728f">write · read</text>
+
+  <path d="M450,330 L450,368" fill="none" stroke="#4b5a4e" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Cognee Cloud -->
+  <rect x="270" y="368" width="360" height="86" rx="12" fill="#fff4e0" stroke="#e0a94a" stroke-width="1.8"/>
+  <text x="450" y="400" text-anchor="middle" font-size="16" font-weight="700" fill="#5c4213">Cognee Cloud</text>
+  <text x="450" y="422" text-anchor="middle" font-size="12.5" fill="#7a5c25">knowledge graph + embeddings</text>
+  <text x="450" y="440" text-anchor="middle" font-size="11" fill="#93743a">remember · recall · improve · forget</text>
+
+  <!-- split down to reviewer + graph panel -->
+  <path d="M370,454 L370,486 L200,486 L200,514" fill="none" stroke="#4b5a4e" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <path d="M530,454 L530,486 L700,486 L700,514" fill="none" stroke="#4b5a4e" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <g>
+    <rect x="80" y="514" width="240" height="66" rx="10" fill="#eef5e6" stroke="#8bab6e" stroke-width="1.5"/>
+    <text x="200" y="540" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2f3b2a">sentinel/reviewer.py</text>
+    <text x="200" y="560" text-anchor="middle" font-size="11.5" fill="#5c6b55">LLM draft + grounding lint</text>
+  </g>
+
+  <g>
+    <rect x="580" y="514" width="240" height="66" rx="10" fill="#eef5e6" stroke="#8bab6e" stroke-width="1.5"/>
+    <text x="700" y="540" text-anchor="middle" font-size="13.5" font-weight="600" fill="#2f3b2a">viz/graph_panel.py</text>
+    <text x="700" y="560" text-anchor="middle" font-size="11.5" fill="#5c6b55">Streamlit live graph</text>
+  </g>
+
+  <!-- paused note -->
+  <rect x="150" y="630" width="600" height="58" rx="10" fill="#f3f3f3" stroke="#bbbbbb" stroke-width="1.2" stroke-dasharray="5,4"/>
+  <text x="450" y="654" text-anchor="middle" font-size="12.5" fill="#666666">React + Ink frontend (kiwi-ui/) and FastAPI backend (app/main.py)</text>
+  <text x="450" y="674" text-anchor="middle" font-size="12" fill="#888888">present in repo, paused — post-hackathon direction, not part of current demo</text>
+</svg>
