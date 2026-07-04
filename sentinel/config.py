@@ -4,21 +4,32 @@ from dotenv import load_dotenv
 
 import glob
 
-# Dynamically discover all .env files and load them in priority order
-env_files = glob.glob(".env*")
-def get_priority(filename):
-    if filename == ".env.local":
-        return 0
-    if filename.endswith(".local"):
-        return 1
-    if filename == ".env":
-        return 3
-    return 2
+# Load .env files with most-specific-wins precedence. Template files
+# (.env.example and friends) hold only placeholders and are never loaded —
+# loading them was shadowing the real .env, since load_dotenv(override=False)
+# keeps whichever value is set first.
+_ENV_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
 
-env_files.sort(key=get_priority)
-for f in env_files:
-    if os.path.isfile(f):
-        load_dotenv(f)
+
+def _env_load_order(filename: str) -> int:
+    """Lower rank loads first; the last-loaded file wins (override=True)."""
+    name = os.path.basename(filename)
+    if name == ".env":
+        return 0  # base config — lowest precedence
+    if name == ".env.local":
+        return 3  # personal overrides — highest precedence, load last
+    if name.endswith(".local"):
+        return 2
+    return 1  # other .env.<environment> files
+
+
+_env_files = [
+    f
+    for f in glob.glob(".env*")
+    if os.path.isfile(f) and not f.endswith(_ENV_TEMPLATE_SUFFIXES)
+]
+for _env_file in sorted(_env_files, key=_env_load_order):
+    load_dotenv(_env_file, override=True)
 
 
 @dataclass(frozen=True)

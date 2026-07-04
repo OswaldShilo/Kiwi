@@ -28,54 +28,88 @@ except ImportError:
 console = Console()
 
 
-def get_llm_client():
+STATE_FILE = "kiwi_session_state.json"
+LLM_PROVIDERS = ("anthropic", "gemini", "openai")
+_ENV_KEY_NAMES = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
+_PLACEHOLDER_KEYS = {
+    "anthropic": "your_anthropic_key_here",
+    "gemini": "your_gemini_key_here",
+    "openai": "your_openai_key_here",
+}
+
+
+def _read_state() -> dict:
     import json
-    state_file = "kiwi_session_state.json"
-    provider = None
-    model = None
-    api_key = None
-    if os.path.exists(state_file):
+    if os.path.exists(STATE_FILE):
         try:
-            with open(state_file, "r") as f:
-                state = json.load(f)
-            if state.get("is_logged_in"):
-                provider = state.get("llm_provider", "").lower() or None
-                model = state.get("llm_model")
-                # NOTE: state["api_key"] is Cognee's API key; LLM keys should come from env (or a dedicated field).
+            with open(STATE_FILE, "r") as f:
+                return json.load(f)
         except Exception:
-            pass
+            return {}
+    return {}
 
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    gemini_key = os.environ.get("GEMINI_API_KEY")
-    openai_key = os.environ.get("OPENAI_API_KEY")
 
-    if provider == "anthropic" and anthropic_key and anthropic_key != "your_anthropic_key_here":
-        api_key = anthropic_key
-    elif provider == "gemini" and gemini_key and gemini_key != "your_gemini_key_here":
-        api_key = gemini_key
-    elif provider == "openai" and openai_key and openai_key != "your_openai_key_here":
-        api_key = openai_key
-    elif not provider:
-        if anthropic_key and anthropic_key != "your_anthropic_key_here":
-            provider, api_key = "anthropic", anthropic_key
-        elif gemini_key and gemini_key != "your_gemini_key_here":
-            provider, api_key = "gemini", gemini_key
-        elif openai_key and openai_key != "your_openai_key_here":
-            provider, api_key = "openai", openai_key
+def _write_state(updates: dict) -> None:
+    import json
+    state = _read_state()
+    state.update(updates)
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def _provider_key(provider: str) -> str | None:
+    """Return a real API key for the provider from env, or None if unset/placeholder."""
+    key = os.environ.get(_ENV_KEY_NAMES.get(provider, ""), "")
+    if key and key != _PLACEHOLDER_KEYS.get(provider):
+        return key
+    return None
+
+
+def _state_model() -> str | None:
+    """The LLM model saved via /model, or None (ask_llm falls back to a default)."""
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return None
+    return _read_state().get("llm_model")
+
+
+def get_llm_client():
+    """Resolve the active LLM as a ``(provider, client)`` pair.
+
+    Provider preference is the one saved via /provider or /login in
+    ``kiwi_session_state.json``; otherwise the first provider that has a real
+    API key in the environment. Returns ``(None, None)`` when nothing is
+    configured.
+    """
+    provider = (_read_state().get("llm_provider") or "").lower()
+
+    if provider in LLM_PROVIDERS and _provider_key(provider):
+        api_key = _provider_key(provider)
+    else:
+        provider, api_key = "", None
+        for candidate in LLM_PROVIDERS:
+            key = _provider_key(candidate)
+            if key:
+                provider, api_key = candidate, key
+                break
+
     if not provider or not api_key:
-        return None, None, None
+        return None, None
 
     if provider == "anthropic" and anthropic:
-        return "anthropic", anthropic.Anthropic(api_key=api_key), model or "claude-opus-4-8"
-    elif provider == "gemini" and genai:
-        return "gemini", genai.Client(api_key=api_key), model or "gemini-3-flash-preview"
-    elif provider == "openai":
+        return "anthropic", anthropic.Anthropic(api_key=api_key)
+    if provider == "gemini" and genai:
+        return "gemini", genai.Client(api_key=api_key)
+    if provider == "openai":
         try:
             import openai
-            return "openai", openai.OpenAI(api_key=api_key), model or "gpt-5.5"
+            return "openai", openai.OpenAI(api_key=api_key)
         except ImportError:
             pass
-    return None, None, None
+    return None, None
 
 
 def ask_llm(provider, client, prompt: str, system_instruction: str = "You are Kiwi, a helpful QA assistant.", model=None) -> str:
@@ -119,15 +153,76 @@ def ask_llm(provider, client, prompt: str, system_instruction: str = "You are Ki
     return "No LLM API key configured."
 
 
+def _print_config(settings):
+    state = _read_state()
+    table = Table(title="🥝 Kiwi Configuration", show_header=True, header_style="bold green")
+    table.add_column("Setting", style="cyan", no_wrap=True)
+    table.add_column("Value")
+    table.add_row("Cognee source", "session login" if state.get("is_logged_in") else ".env")
+    table.add_row("Cognee base URL", settings.base_url)
+    table.add_row("Cognee tenant", settings.tenant_id)
+    table.add_row("Cognee API key", (settings.api_key[:6] + "…") if settings.api_key else "—")
+    table.add_row("Dataset", settings.dataset)
+    table.add_row("LLM provider", state.get("llm_provider") or "(auto-detect)")
+    table.add_row("LLM model", state.get("llm_model") or "(provider default)")
+    keys = [p for p in LLM_PROVIDERS if _provider_key(p)]
+    table.add_row("LLM keys in env", ", ".join(keys) if keys else "none")
+    console.print(table)
+
+
+def _interactive_login(settings, input_func):
+    """Collect Cognee credentials + LLM provider, persist to the state file, and
+    return ``(new_settings, new_client)``. Returns ``(None, None)`` if cancelled."""
+    console.print(Panel.fit(
+        "🔐 [bold]Kiwi login[/bold] — press Enter to keep the shown default.",
+        border_style="cyan",
+    ))
+
+    def prompt(label, default="", secret=False):
+        shown = ("•" * 6) if (secret and default) else default
+        suffix = f" [{shown}]" if shown else ""
+        return input_func(f"{label}{suffix}: ").strip() or default
+
+    base_url = prompt("Cognee base URL", settings.base_url)
+    api_key = prompt("Cognee API key", settings.api_key, secret=True)
+    tenant_id = prompt("Cognee tenant ID", settings.tenant_id)
+    if not (base_url and api_key and tenant_id):
+        console.print("[bold red]Login cancelled — Cognee base URL, API key and tenant are all required.[/bold red]")
+        return None, None
+
+    provider = prompt("LLM provider (anthropic/gemini/openai)",
+                      _read_state().get("llm_provider") or "anthropic").lower()
+    if provider not in LLM_PROVIDERS:
+        console.print(f"[yellow]Unknown provider '{provider}' — leaving LLM provider on auto-detect.[/yellow]")
+        provider = ""
+    model = prompt("LLM model (blank = provider default)", _read_state().get("llm_model") or "")
+
+    _write_state({
+        "is_logged_in": True,
+        "base_url": base_url,
+        "api_key": api_key,
+        "tenant_id": tenant_id,
+        "llm_provider": provider,
+        "llm_model": model or None,
+    })
+    new_settings = load_settings()
+    return new_settings, CogneeClient(new_settings)
+
+
 def print_help():
     table = Table(title="🥝 Kiwi Commands", show_header=True, header_style="bold green")
     table.add_column("Command", style="cyan", no_wrap=True)
     table.add_column("Description")
+    table.add_row("/login", "Interactive credentials gate — set Cognee + LLM config.")
+    table.add_row("/provider [name]", "Show or switch the active LLM provider.")
+    table.add_row("/model [name]", "Show or set the provider-specific model.")
+    table.add_row("/config", "Print the active Cognee + LLM configuration.")
     table.add_row("/recall <query>", "Query Cognee memory directly.")
     table.add_row("/remember <text>", "Save a custom fact/incident to Cognee memory.")
     table.add_row("/review [xml_path]", "Ingest JUnit XML report, recall matches, and suggest fixes.")
     table.add_row("/test", "Run test suite (pytest), auto-ingest failures, and review them.")
     table.add_row("/forget", "Clear the Kiwi dataset in Cognee memory.")
+    table.add_row("/clear", "Clear the screen.")
     table.add_row("/help", "Show this help table.")
     table.add_row("/exit or /quit", "Exit Kiwi.")
     console.print(table)
@@ -231,6 +326,37 @@ def run_session(client, settings, input_func=input):
                     except CogneeError as exc:
                         console.print(f"[bold red]✗ Failed to clear dataset:[/bold red] {exc}")
 
+            elif cmd == "/config":
+                _print_config(settings)
+
+            elif cmd == "/clear":
+                console.clear()
+
+            elif cmd == "/provider":
+                name = arg.lower()
+                if not name:
+                    console.print(f"[cyan]Active LLM provider:[/cyan] {_read_state().get('llm_provider') or '(auto-detect)'}")
+                    console.print(f"Switch with e.g. [cyan]/provider anthropic[/cyan]. Options: {', '.join(LLM_PROVIDERS)}")
+                elif name in LLM_PROVIDERS:
+                    _write_state({"llm_provider": name})
+                    keyed = "[green]key found in env[/green]" if _provider_key(name) else "[yellow]no API key in env yet[/yellow]"
+                    console.print(f"[bold green]✓[/bold green] Provider set to [cyan]{name}[/cyan] ({keyed}).")
+                else:
+                    console.print(f"[bold red]Unknown provider '{name}'.[/bold red] Options: {', '.join(LLM_PROVIDERS)}")
+
+            elif cmd == "/model":
+                if not arg:
+                    console.print(f"[cyan]Active model:[/cyan] {_read_state().get('llm_model') or '(provider default)'}")
+                else:
+                    _write_state({"llm_model": arg})
+                    console.print(f"[bold green]✓[/bold green] Model set to [cyan]{arg}[/cyan].")
+
+            elif cmd == "/login":
+                new_settings, new_client = _interactive_login(settings, input_func)
+                if new_settings is not None:
+                    settings, client = new_settings, new_client
+                    console.print(f"[bold green]✓[/bold green] Logged in. Active Cognee dataset: [cyan]{settings.dataset}[/cyan]")
+
             else:
                 console.print(f"[bold red]Unknown command: {cmd}[/bold red]. Type [cyan]/help[/cyan] for available commands.")
 
@@ -268,7 +394,7 @@ def run_session(client, settings, input_func=input):
             )
             
             with console.status(f"[bold cyan]Asking {provider.capitalize()}...[/bold cyan]"):
-                ans = ask_llm(provider, llm, prompt, system_instruction)
+                ans = ask_llm(provider, llm, prompt, system_instruction, model=_state_model())
             console.print(Panel(Markdown(ans), title="Kiwi Answer", border_style="green"))
 
 
