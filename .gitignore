@@ -9,4 +9,6 @@ build/
 .venv/
 test-results.xml
 kiwi_session_state.json
+kiwi_flaky_state.json
+junit_report.xml
 node_modules/

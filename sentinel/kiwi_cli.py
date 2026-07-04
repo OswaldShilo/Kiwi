@@ -1,6 +1,8 @@
 import os
 import subprocess
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -11,6 +13,7 @@ from rich.table import Table
 from sentinel.cognee_client import CogneeClient, CogneeError
 from sentinel.config import load_settings
 from sentinel.ingest import process_report
+from sentinel.lifecycle import confirm
 from sentinel.reviewer import fallback_review, build_review
 
 try:
@@ -29,6 +32,7 @@ console = Console()
 
 
 STATE_FILE = "kiwi_session_state.json"
+FLAKY_FILE = "kiwi_flaky_state.json"
 LLM_PROVIDERS = ("anthropic", "gemini", "openai")
 _ENV_KEY_NAMES = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -59,6 +63,29 @@ def _write_state(updates: dict) -> None:
     state.update(updates)
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+
+
+def _read_flaky() -> dict:
+    import json
+    if os.path.exists(FLAKY_FILE):
+        try:
+            with open(FLAKY_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _bump_flaky(test_names) -> None:
+    """Increment the persisted failure counter for each failing test name."""
+    import json
+    if not test_names:
+        return
+    counts = _read_flaky()
+    for name in test_names:
+        counts[name] = counts.get(name, 0) + 1
+    with open(FLAKY_FILE, "w") as f:
+        json.dump(counts, f, indent=2)
 
 
 def _provider_key(provider: str) -> str | None:
@@ -221,6 +248,10 @@ def print_help():
     table.add_row("/remember <text>", "Save a custom fact/incident to Cognee memory.")
     table.add_row("/review [xml_path]", "Ingest JUnit XML report, recall matches, and suggest fixes.")
     table.add_row("/test", "Run test suite (pytest), auto-ingest failures, and review them.")
+    table.add_row("/resolve <summary>", "Record a fix for the last failing test (bridges to memory).")
+    table.add_row("/flaky [test]", "Show recorded failure counts per test.")
+    table.add_row("/history <test>", "Recall a test's historical failures from memory.")
+    table.add_row("/session", "Show this session's activity log.")
     table.add_row("/forget", "Clear the Kiwi dataset in Cognee memory.")
     table.add_row("/clear", "Clear the screen.")
     table.add_row("/help", "Show this help table.")
@@ -236,6 +267,12 @@ def run_session(client, settings, input_func=input):
         border_style="green"
     ))
     console.print("Welcome to Kiwi! Type [cyan]/help[/cyan] for a list of commands.\n")
+
+    last_failures: list[str] = []
+    session_log: list[str] = []
+
+    def log(entry: str) -> None:
+        session_log.append(f"{datetime.now():%H:%M:%S}  {entry}")
 
     while True:
         try:
@@ -299,6 +336,9 @@ def run_session(client, settings, input_func=input):
                     continue
                 with console.status(f"[bold cyan]Processing test report '{xml_path}'...[/bold cyan]"):
                     results = process_report(xml_path, client=client, dataset=settings.dataset)
+                last_failures = [r.failure.test_name for r in results]
+                _bump_flaky(last_failures)
+                log(f"/review {xml_path}: {len(results)} failure(s)")
                 for r in results:
                     review = build_review(r)
                     console.print(Panel(Markdown(review), title=f"Review for {r.failure.test_name}", border_style="yellow"))
@@ -312,6 +352,9 @@ def run_session(client, settings, input_func=input):
                 if os.path.exists("junit_report.xml"):
                     with console.status("[bold cyan]Processing results and calling memory...[/bold cyan]"):
                         results = process_report("junit_report.xml", client=client, dataset=settings.dataset)
+                    last_failures = [r.failure.test_name for r in results]
+                    _bump_flaky(last_failures)
+                    log(f"/test: {len(results)} failure(s)")
                     for r in results:
                         review = build_review(r)
                         console.print(Panel(Markdown(review), title=f"Review for {r.failure.test_name}", border_style="yellow"))
@@ -356,6 +399,65 @@ def run_session(client, settings, input_func=input):
                 if new_settings is not None:
                     settings, client = new_settings, new_client
                     console.print(f"[bold green]✓[/bold green] Logged in. Active Cognee dataset: [cyan]{settings.dataset}[/cyan]")
+
+            elif cmd == "/resolve":
+                if not arg:
+                    console.print("[bold yellow]Describe the fix.[/bold yellow] E.g. [cyan]/resolve added idempotency key[/cyan]")
+                elif not last_failures:
+                    console.print("[bold yellow]No recent failing test to resolve.[/bold yellow] Run [cyan]/test[/cyan] or [cyan]/review[/cyan] first.")
+                else:
+                    target = last_failures[-1]
+                    with console.status(f"[bold cyan]Recording resolution for '{target}' (improve)...[/bold cyan]"):
+                        try:
+                            confirm(client, test_name=target, resolution=arg,
+                                    run_id=f"kiwi-{int(time.time())}", dataset=settings.dataset)
+                            log(f"/resolve {target}: {arg}")
+                            console.print(f"[bold green]✓[/bold green] Resolution recorded for [cyan]{target}[/cyan] and bridged to permanent memory.")
+                        except CogneeError as exc:
+                            console.print(f"[bold red]✗ Failed to record resolution:[/bold red] {exc}")
+
+            elif cmd == "/flaky":
+                counts = _read_flaky()
+                if arg:
+                    console.print(f"[cyan]{arg}[/cyan]: {counts.get(arg, 0)} recorded failure(s)")
+                elif not counts:
+                    console.print("[bold yellow]No failures tracked yet.[/bold yellow] Run [cyan]/test[/cyan] or [cyan]/review[/cyan] first.")
+                else:
+                    table = Table(title="🥝 Flaky-Test Failure Counts", header_style="bold green")
+                    table.add_column("Test", style="cyan")
+                    table.add_column("Failures", justify="right")
+                    for name, cnt in sorted(counts.items(), key=lambda kv: kv[1], reverse=True):
+                        table.add_row(name, str(cnt))
+                    console.print(table)
+
+            elif cmd == "/history":
+                if not arg:
+                    console.print("[bold yellow]Specify a test name.[/bold yellow] E.g. [cyan]/history test_login[/cyan]")
+                else:
+                    query = f"List all historical failures and resolutions of the test '{arg}', with dates."
+                    hits = None
+                    with console.status(f"[bold cyan]Querying memory for '{arg}' history...[/bold cyan]"):
+                        try:
+                            hits = client.recall(query, dataset=settings.dataset)
+                        except CogneeError as exc:
+                            console.print(f"[bold red]✗ History lookup failed:[/bold red] {exc}")
+                    if hits:
+                        for idx, hit in enumerate(hits, 1):
+                            console.print(Panel(hit.get("text", ""), title=f"{arg} — history #{idx}", border_style="cyan"))
+                    elif hits is not None:
+                        console.print(f"[bold yellow]No history found for '{arg}'.[/bold yellow]")
+
+            elif cmd == "/session":
+                if not session_log:
+                    console.print("[bold yellow]No activity recorded in this session yet.[/bold yellow]")
+                else:
+                    table = Table(title="🥝 Session Activity", header_style="bold green")
+                    table.add_column("Time", style="dim", no_wrap=True)
+                    table.add_column("Event")
+                    for entry in session_log:
+                        ts, _, ev = entry.partition("  ")
+                        table.add_row(ts, ev)
+                    console.print(table)
 
             else:
                 console.print(f"[bold red]Unknown command: {cmd}[/bold red]. Type [cyan]/help[/cyan] for available commands.")

@@ -73,3 +73,40 @@ def test_kiwi_chat_query(mock_ask_llm, mock_get_llm, mock_client, mock_settings)
     mock_client.recall.assert_any_call("Does the API charge twice?", dataset="kiwi-test")
     mock_ask_llm.assert_called_once()
     assert "observed customer billed twice" in mock_ask_llm.call_args[0][2]
+
+
+def test_kiwi_history_recalls_by_test_name(mock_client, mock_settings):
+    inputs = ["/history test_login", "/exit"]
+    def mock_input(prompt):
+        return inputs.pop(0)
+
+    mock_client.recall.return_value = [{"text": "test_login failed 2026-02-10"}]
+    run_session(mock_client, mock_settings, input_func=mock_input)
+    assert any("test_login" in call.args[0] for call in mock_client.recall.call_args_list)
+
+
+def test_kiwi_resolve_without_failure_is_a_noop(mock_client, mock_settings):
+    inputs = ["/resolve added idempotency key", "/exit"]
+    def mock_input(prompt):
+        return inputs.pop(0)
+
+    run_session(mock_client, mock_settings, input_func=mock_input)
+    mock_client.remember.assert_not_called()
+    mock_client.remember_entry.assert_not_called()
+
+
+def test_kiwi_flaky_empty_runs_clean(mock_client, mock_settings, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # no flaky-state file present
+    inputs = ["/flaky", "/exit"]
+    def mock_input(prompt):
+        return inputs.pop(0)
+
+    run_session(mock_client, mock_settings, input_func=mock_input)
+
+
+def test_kiwi_session_empty_runs_clean(mock_client, mock_settings):
+    inputs = ["/session", "/exit"]
+    def mock_input(prompt):
+        return inputs.pop(0)
+
+    run_session(mock_client, mock_settings, input_func=mock_input)
