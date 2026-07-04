@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import glob
 
 # Dynamically discover all .env files and load them in priority order
-env_files = glob.glob(".env*")
+env_files = [f for f in glob.glob(".env*") if not f.endswith(".example")]
 def get_priority(filename):
     if filename == ".env.local":
         return 0

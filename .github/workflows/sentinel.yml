@@ -38,6 +38,6 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
-          uv run sentinel ingest test-results.xml --ci --review
+          uv run python scripts/ci_runner.py test-results.xml --ci --review
           --run-id "${{ github.run_id }}"
           ${{ github.event_name == 'pull_request' && format('--post --repo {0} --pr {1}', github.repository, github.event.pull_request.number) || '' }}

@@ -1,2 +1,2 @@
 @echo off
-pnpm --silent --dir kiwi-ui start
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0kiwi.ps1"

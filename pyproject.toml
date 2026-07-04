@@ -15,9 +15,7 @@ dependencies = [
     "rich>=13.7.0",
 ]
 
-[project.scripts]
-sentinel = "sentinel.cli:main"
-kiwi = "sentinel.kiwi_cli:main"
+
 
 [dependency-groups]
 dev = [

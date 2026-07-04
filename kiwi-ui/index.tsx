@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react'
-import { render, Box, Text } from '@claude-code-kit/ink-renderer'
+import { render, Box, Text, useInput, useApp } from '@claude-code-kit/ink-renderer'
 import { REPL, WelcomeScreen } from '@claude-code-kit/ui'
 import axios from 'axios'
 
@@ -33,11 +33,13 @@ type LoginState = {
 }
 
 function App() {
+  const { exit } = useApp()
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [loginState, setLoginState] = useState<LoginState>({ step: 'idle' })
   const [envCredentials, setEnvCredentials] = useState<{ baseUrl: string, apiKey: string, tenantId: string } | null>(null)
+  const ctrlCPressedRef = React.useRef(false)
 
   useEffect(() => {
     async function checkAuth() {
@@ -68,11 +70,45 @@ function App() {
     checkAuth()
   }, [])
 
-  const handleSubmit = useCallback(async (text: string) => {
+  useInput((input, key) => {
+    if (key.escape) {
+      if (loginState.step !== 'idle') {
+        setLoginState({ step: 'idle' })
+        setMessages(prev => [...prev, {
+          id: Math.random().toString(36).substring(7),
+          role: 'assistant',
+          content: 'Interactive configuration cancelled. Returned to main command line.'
+        }])
+        setIsLoading(false)
+      }
+    }
+
+    if (key.ctrl && input === 'c') {
+      if (ctrlCPressedRef.current) {
+        exit()
+      } else {
+        ctrlCPressedRef.current = true
+        setMessages(prev => [...prev, {
+          id: Math.random().toString(36).substring(7),
+          role: 'assistant',
+          content: 'Press Ctrl+C again to close the session.'
+        }])
+        setTimeout(() => {
+          ctrlCPressedRef.current = false
+        }, 3000)
+      }
+    } else {
+      ctrlCPressedRef.current = false
+    }
+  })
+
+  const handleSubmit = useCallback(async (text: string, silent: boolean = false) => {
     setIsLoading(true)
     const userMsgId = Math.random().toString(36).substring(7)
     const userMsg: Message = { id: userMsgId, role: 'user', content: text }
-    setMessages(prev => [...prev, userMsg])
+    if (!silent) {
+      setMessages(prev => [...prev, userMsg])
+    }
 
     const assistantMsgId = Math.random().toString(36).substring(7)
 
@@ -300,7 +336,7 @@ function App() {
           setMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: 'Enter Cognee Base URL:' }])
         }
       } else if (text.startsWith('/exit')) {
-        process.exit(0)
+        exit()
       } else if (text.startsWith('/help')) {
         const helpText = [
           'Available Commands:',
@@ -324,8 +360,136 @@ function App() {
       } else if (text.startsWith('/review')) {
         setMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: 'Use /test to run the tests and generate a review, or review a test directly.' }])
       } else {
-        const resp = await axios.post(`${BACKEND_URL}/kiwi/query`, { query: text })
-        setMessages(prev => [...prev, { id: assistantMsgId, role: 'assistant', content: resp.data.answer }])
+        // Initialize an assistant message with a thinking block
+        const assistantMsg: Message = {
+          id: assistantMsgId,
+          role: 'assistant',
+          content: [
+            { type: 'thinking', text: 'Initializing...', collapsed: false }
+          ]
+        }
+        setMessages(prev => [...prev, assistantMsg])
+
+        const response = await fetch(`${BACKEND_URL}/kiwi/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: text })
+        })
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        let accumulatedText = ''
+        let actionPayload: any = null
+        
+        if (reader) {
+          let buffer = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+            
+            for (const line of lines) {
+              if (!line.trim()) continue
+              try {
+                const parsed = JSON.parse(line)
+                if (parsed.type === 'thinking') {
+                  setMessages(prev => prev.map(m => {
+                    if (m.id === assistantMsgId) {
+                      const contents = [...(Array.isArray(m.content) ? m.content : [])]
+                      const thinkIdx = contents.findIndex(c => c.type === 'thinking')
+                      if (thinkIdx >= 0) {
+                        contents[thinkIdx] = { type: 'thinking', text: parsed.text, collapsed: false }
+                      } else {
+                        contents.unshift({ type: 'thinking', text: parsed.text, collapsed: false })
+                      }
+                      return { ...m, content: contents }
+                    }
+                    return m
+                  }))
+                } else if (parsed.type === 'chunk' || parsed.type === 'text') {
+                  accumulatedText += parsed.text
+                  setMessages(prev => prev.map(m => {
+                    if (m.id === assistantMsgId) {
+                      const contents = [...(Array.isArray(m.content) ? m.content : [])]
+                      
+                      const thinkIdx = contents.findIndex(c => c.type === 'thinking')
+                      if (thinkIdx >= 0) {
+                        contents[thinkIdx] = { ...contents[thinkIdx], collapsed: true }
+                      }
+                      
+                      const textIdx = contents.findIndex(c => c.type === 'text')
+                      if (textIdx >= 0) {
+                        contents[textIdx] = { type: 'text', text: accumulatedText }
+                      } else {
+                        contents.push({ type: 'text', text: accumulatedText })
+                      }
+                      return { ...m, content: contents }
+                    }
+                    return m
+                  }))
+                } else if (parsed.type === 'action') {
+                  actionPayload = parsed
+                } else if (parsed.type === 'error') {
+                  throw new Error(parsed.message)
+                }
+              } catch (err) {
+                // ignore split errors
+              }
+            }
+          }
+        }
+
+        if (actionPayload) {
+          // Collapse the thinking block so it stays visible on screen, but do not delete it
+          setMessages(prev => prev.map(m => {
+            if (m.id === assistantMsgId && Array.isArray(m.content)) {
+              return {
+                ...m,
+                content: m.content.map(c => c.type === 'thinking' ? { ...c, collapsed: true } : c)
+              }
+            }
+            return m
+          }))
+          
+          const action = actionPayload.action
+          const args = actionPayload.args || {}
+          if (action === 'clear') {
+            setMessages([])
+            setIsLoading(false)
+            return
+          }
+          if (action === 'exit') {
+            exit()
+            setIsLoading(false)
+            return
+          }
+          
+          let cmd = `/${action}`
+          if (action === 'test' && args.path) {
+            cmd += ` ${args.path}`
+          } else if (action === 'remember' && args.text) {
+            cmd += ` ${args.text}`
+          } else if (action === 'recall' && args.query) {
+            cmd += ` ${args.query}`
+          } else if (action === 'forget') {
+            cmd += ` ${args.all ? '--all' : (args.dataset || '')}`
+          } else if (action === 'resolve' && args.summary) {
+            cmd += ` ${args.summary}`
+          } else if (action === 'flaky' && args.test_name) {
+            cmd += ` ${args.test_name}`
+          } else if (action === 'history' && args.test_name) {
+            cmd += ` ${args.test_name}`
+          }
+          
+          await handleSubmit(cmd, true)
+        }
       }
     } catch (e: any) {
       const errMsg = e.response?.data?.detail || e.message
@@ -341,6 +505,53 @@ function App() {
     const label = isUser ? "You" : "Kiwi";
     const color = isUser ? "cyan" : "#84cc16"; // beautiful lime/green for Kiwi
 
+    const renderContent = () => {
+      if (typeof message.content === 'string') {
+        return <Text>{message.content}</Text>;
+      }
+      return (
+        <Box flexDirection="column">
+          {message.content.map((c: any, i: number) => {
+            if (c.type === 'thinking') {
+              return (
+                <Box key={i} flexDirection="column" marginY={1}>
+                  <Box
+                    onClick={() => {
+                      setMessages(prev => prev.map(m => {
+                        if (m.id === message.id && Array.isArray(m.content)) {
+                          const contents = m.content.map(item => {
+                            if (item.type === 'thinking') {
+                              return { ...item, collapsed: !item.collapsed }
+                            }
+                            return item;
+                          });
+                          return { ...m, content: contents }
+                        }
+                        return m;
+                      }))
+                    }}
+                  >
+                    <Text dimColor>
+                      {c.collapsed ? '▶ Thinking (click to expand)' : '▼ Thinking'}
+                    </Text>
+                  </Box>
+                  {!c.collapsed && (
+                    <Box marginLeft={2} paddingLeft={1} borderStyle="round" borderColor="gray">
+                      <Text italic dimColor>{c.text}</Text>
+                    </Box>
+                  )}
+                </Box>
+              );
+            }
+            if (c.type === 'text') {
+              return <Text key={i}>{c.text}</Text>;
+            }
+            return null;
+          })}
+        </Box>
+      );
+    };
+
     return (
       <Box flexDirection="column" key={message.id}>
         <Box>
@@ -351,7 +562,7 @@ function App() {
           </Text>
         </Box>
         <Box marginLeft={2}>
-          <Text>{message.content}</Text>
+          {renderContent()}
         </Box>
       </Box>
     );
@@ -377,8 +588,8 @@ function App() {
           </Box>
         </Box>
       }
-      commands={[
-        { name: 'login', description: 'Login with username and password', onExecute: () => handleSubmit('/login') },
+      commands={loginState.step !== 'idle' ? [] : [
+        { name: 'login', description: 'Login with credentials (interactive)', onExecute: () => handleSubmit('/login') },
         { name: 'provider', description: 'Switch active LLM provider', onExecute: () => handleSubmit('/provider') },
         { name: 'model', description: 'Switch active LLM model', onExecute: () => handleSubmit('/model') },
         { name: 'config', description: 'Show active configuration and settings', onExecute: () => handleSubmit('/config') },

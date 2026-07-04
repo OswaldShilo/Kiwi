@@ -138,18 +138,28 @@ GEMINI_API_KEY=<key>
 OPENAI_API_KEY=<key>
 ```
 
-### 3. Run the Backend API
+### 3. Install Frontend Dependencies
+Since the CLI's UI dependencies are located in the `kiwi-ui` directory, install them with:
+```bash
+pnpm install --prefix kiwi-ui
+```
+Or navigate into the directory and install:
+```bash
+cd kiwi-ui
+pnpm install
+```
+
+### 4. Run the Backend API
 ```bash
 uv run uvicorn app.main:app --port 8000
 ```
 
-### 4. Run the CLI REPL
-```bash
-pnpm kiwi
-# Or use the silent launchers:
-# CMD: kiwi
-# PowerShell: .\kiwi
-```
+### 5. Run the CLI REPL
+Use the silent launcher command for your shell:
+* **CMD**: `kiwi`
+* **PowerShell**: `.\kiwi`
+
+*(Alternatively, you can launch via `pnpm kiwi`)*
 
 ---
 
@@ -159,3 +169,4 @@ For in-depth developer orientation, refer to:
 * [Exploration Guide](docs/exploration_guide.md): Code orientation map and data pipeline flow.
 * [Subsystems Guide](docs/subsystems.md): Structural details of CLI, Backend, Memory, and Review engines.
 * [Tools Reference](docs/tools.md): Specs for Kiwi's execution modules.
+* [Command Reference](docs/commands.md): Details, functions, and examples for all REPL slash commands.

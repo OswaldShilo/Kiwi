@@ -113,7 +113,7 @@ def build_review(result: IngestResult, diff: str = "") -> str:
         grounded = ground_review(draft, result.history)
         return grounded if grounded else fallback_review(result)
 
-    from sentinel.kiwi_cli import get_llm_client, ask_llm
+    from sentinel.llm_client import get_llm_client, ask_llm
 
     provider, client, model = get_llm_client()
     if not provider or not client:

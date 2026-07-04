@@ -5,7 +5,7 @@ This document details the major subsystems of the Kiwi QA Harness Agent.
 ---
 
 ## 1. CLI Surface & REPL Subsystem
-**Location:** [kiwi-ui/index.tsx](file:///c:/proj/Kiwi/kiwi-ui/index.tsx)
+**Location:** [kiwi-ui/index.tsx](../kiwi-ui/index.tsx)
 
 An interactive React + Ink shell that runs in the terminal.
 * **REPL Component**: Manages terminal output streaming, autocomplete suggestions, and history buffers.
@@ -15,7 +15,7 @@ An interactive React + Ink shell that runs in the terminal.
 ---
 
 ## 2. API Backend Subsystem
-**Location:** [app/main.py](file:///c:/proj/Kiwi/app/main.py)
+**Location:** [app/main.py](../app/main.py)
 
 A FastAPI web service coordinating executions and client interactions.
 * **Endpoints**:
@@ -27,7 +27,7 @@ A FastAPI web service coordinating executions and client interactions.
 ---
 
 ## 3. Memory Subsystem
-**Location:** [sentinel/cognee_client.py](file:///c:/proj/Kiwi/sentinel/cognee_client.py)
+**Location:** [sentinel/cognee_client.py](../sentinel/cognee_client.py)
 
 Connects the agent to a Cognee graph database.
 * **Remember pipeline**: Serializes test traces, stack traces, and resolution summaries, writing them into graph databases.
@@ -36,7 +36,7 @@ Connects the agent to a Cognee graph database.
 ---
 
 ## 4. Review & Grounding Subsystem
-**Location:** [sentinel/reviewer.py](file:///c:/proj/Kiwi/sentinel/reviewer.py)
+**Location:** [sentinel/reviewer.py](../sentinel/reviewer.py)
 
 Ensures generated reviews are factual and grounded.
 * **get_diff()**: Queries git history for local repository code modifications.

@@ -5,7 +5,7 @@ This document describes the core execution tools integrated into the Kiwi QA Har
 ---
 
 ## 1. Pytest Executable Tool
-**Location:** [sentinel/kiwi_cli.py](file:///c:/proj/Kiwi/sentinel/kiwi_cli.py) & [app/main.py](file:///c:/proj/Kiwi/app/main.py)
+**Location:** [sentinel/llm_client.py](../sentinel/llm_client.py) & [app/main.py](../app/main.py)
 
 Runs local test suites, monitors outcomes, and captures outputs.
 * **Execution**: Invokes `pytest` in a subprocess with JUnit XML serialization flags (`--junitxml=junit_report.xml`).
@@ -15,7 +15,7 @@ Runs local test suites, monitors outcomes, and captures outputs.
 ---
 
 ## 2. Cognee Storage Client Tool
-**Location:** [sentinel/cognee_client.py](file:///c:/proj/Kiwi/sentinel/cognee_client.py)
+**Location:** [sentinel/cognee_client.py](../sentinel/cognee_client.py)
 
 Exposes memory graph creation, indexing, and vector similarity querying to the agent loop.
 * **remember(text)**: Stores incident stack traces or resolution summaries.
@@ -24,7 +24,7 @@ Exposes memory graph creation, indexing, and vector similarity querying to the a
 ---
 
 ## 3. review_builder Tool
-**Location:** [sentinel/reviewer.py](file:///c:/proj/Kiwi/sentinel/reviewer.py)
+**Location:** [sentinel/reviewer.py](../sentinel/reviewer.py)
 
 Compiles code changes, failure logs, and historical resolutions, sending them to dynamic model endpoints (Claude, GPT, or Gemini) to build anchored feedback.
 * **Input**: triggers on JUnit XML generation after test crashes.
