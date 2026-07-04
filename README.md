@@ -1,161 +1,76 @@
-# Kiwi - QA Harness Agent
+<!-- <p align="center">
+  <img src="assets/kiwi.png" alt="Kiwi" width="140"/>
+  <img src="assets/cognee-logo.png" alt="Cognee" width="140"/>
+</p> -->
 
-Kiwi is a terminal-native, intelligent QA assistant designed to integrate graph-based memory retrieval (powered by Cognee) with local test executions (via pytest).
+<p align="center">
+  <img src="assets/kiwi.png" alt="Kiwi" height="90" style="vertical-align:middle; margin-right:24px;"/>
+  <img src="assets/cognee-logo.png" alt="Cognee" height="40" style="vertical-align:middle;"/>
+</p>
 
----
 
-## Key Features
-
-* **Terminal-Native REPL**: A reactive CLI surface built with React + Ink, offering autocomplete suggestions and instant command execution.
-* **Graph-Based Memory**: Uses Cognee to index incident logs, stack traces, and resolution summaries, dynamically recalling them during test failures.
-* **Dynamic Credentials Gate**: Keeps API credentials secure and overrides them step-by-step or automatically using .env priority lookups (.env.local -> .env).
-* **Multi-Provider LLM Integration**: Dynamically switches LLM providers (Anthropic, Gemini, OpenAI) and active model configurations at runtime.
-* **Factual Reviews**: Generates test reviews grounded in historical failure records, validated via sentence n-gram verification to eliminate hallucinations.
-
----
-
-## System Architecture
-
-Kiwi uses a layered architecture separating entry surfaces, agent reasoning, memory matching, and subprocess environments.
-
-### Component Architecture
-
-```mermaid
-graph TD
-    UI[Ink UI Surface] <--> API[FastAPI Backend]
-    API <--> Memory[Cognee Graph Memory]
-    API <--> Reviewer[Reviewer Engine]
-    Reviewer <--> LLM[LLM API Gateways]
-```
-
-### Turn Execution Sequence Diagram
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant CLI as Ink CLI REPL
-    participant Srv as FastAPI Backend
-    participant DB as Cognee Graph Memory
-    participant AI as Reviewer Engine
-
-    User->>CLI: run /test
-    CLI->>Srv: POST /kiwi/test
-    Srv->>Srv: Run pytest command
-    alt Test Crashes
-        Srv->>DB: recall(test_name)
-        DB-->>Srv: Return matching historical incident traces
-        Srv->>AI: build_review(failure, history)
-        AI-->>Srv: Return n-gram validated review
-        Srv->>DB: remember(new_failure)
-    end
-    Srv-->>CLI: Return test output & reviews
-    CLI-->>User: Render review in terminal
-```
-
-### Configuration Priority Resolution
-
-```mermaid
-graph LR
-    Local[1. .env.local] --> Combine[Environment Pool]
-    ModeLocal[2. .env.mode.local] --> Combine
-    Mode[3. .env.mode] --> Combine
-    Root[4. .env] --> Combine
-    Combine --> Config[Kiwi Config Loader]
-    State[kiwi_session_state.json] -- Bypasses env if logged in --> Config
-```
-
-1. **Surface Layer**: Built with React and Ink, providing terminal components, state management, and autocomplete command suggestions.
-2. **Backend API Layer**: Built with FastAPI, acting as a middleware server coordinating pytest runs, memory writes, and status checks.
-3. **Memory Layer**: Built on the Cognee graph database platform to store and query failure logs contextually.
-4. **Reviewer Engine**: Runs LLM queries and validates output using sentence n-gram verification against recalled context.
+<h1 align="center">Kiwi</h1>
+<p align="center"><i>A CI memory layer, built on Cognee Cloud.</i></p>
 
 ---
 
-## Subsystems
+## What it does
 
-### CLI REPL Subsystem
-Located in `kiwi-ui/index.tsx`, this subsystem handles stdin/stdout rendering, command routing, autocomplete dropdowns, welcome menus, and credentials gating.
+Kiwi ingests JUnit test failures, stores them in a Cognee knowledge graph, and recalls prior incidents the next time the same class of failure shows up — turning a flat "test failed" into "we've seen this before, here's what fixed it." Reviews are grounded: any claim about history is checked against what was actually recalled before it's shown.
 
-### API Backend Subsystem
-Located in `app/main.py`, this coordinates API requests, runs subprocesses, and manages configurations in `kiwi_session_state.json`.
-
-### Memory Subsystem
-Located in `sentinel/cognee_client.py`, this wraps Cognee API commands (`remember` and `recall`) and indexes incident traces into vector databases.
+Concretely: when a PR's CI run fails, Kiwi reads the failure (the diff, the stack trace, the file it happened in) and writes it into Cognee's memory as a linked record — test, error, file, fix, all connected. The next time a failure looks similar, Kiwi pulls that memory back out automatically and surfaces it right where it's needed — in the CLI, the PR review, or the graph panel — instead of an engineer re-investigating something the team already solved once.
 
 ---
 
-## Execution Tools
+## Running it
 
-### Pytest Executable Tool
-Invokes pytest in a local subprocess with JUnit XML serialization flags (`--junitxml=junit_report.xml`) and tracks local failure metrics.
-
-### Cognee Storage Client Tool
-Performs vector similarity queries (`recall`) and updates graph memory nodes (`remember`).
-
-### Review Builder Tool
-Translates JUnit XML outputs and git changes into grounded developer reviews via Dynamic LLM calls.
-
----
-
-## Commands Registry
-
-| Command | Description |
-|---|---|
-| `/login` | Starts the step-by-step interactive credentials gate. |
-| `/provider` | Allows switching active LLM Provider (Anthropic, OpenAI, Gemini). |
-| `/model` | Allows selecting provider-specific models. |
-| `/config` | Prints active configuration and settings. |
-| `/clear` | Instantly clears the screen's message logs. |
-| `/test [path]` | Spawns pytest and auto-ingests failures. |
-| `/remember <text>` | Manually saves a custom fact/incident comment to graph memory. |
-| `/recall <query>` | Contextually queries the Cognee memory graph. |
-| `/resolve <summary>`| Records a resolution/fix summary for the last failing test. |
-| `/flaky [test]` | Lists flaky-test failure counts. |
-| `/history <test>` | Lists all historical failures of a target test. |
-| `/session` | Outputs logs for the active CLI session. |
-| `/forget` | Explicitly clears datasets from Cognee memory. |
-| `/exit` | Safely quits the Kiwi CLI. |
-
----
-
-## Getting Started
-
-### 1. Prerequisites
-* Python 3.10+
-* Node.js & pnpm
-* uv (Fast Python package manager)
-
-### 2. Configuration Setup
-Create a `.env.local` or `.env` in the root directory:
-```env
-COGNEE_BASE_URL=https://<your-tenant>.cognee.ai
-COGNEE_API_KEY=<your-api-key>
-COGNEE_TENANT_ID=<your-tenant-id>
-
-# LLM Keys
-ANTHROPIC_API_KEY=<key>
-GEMINI_API_KEY=<key>
-OPENAI_API_KEY=<key>
-```
-
-### 3. Run the Backend API
 ```bash
-uv run uvicorn app.main:app --port 8000
+cp .env.example .env          # fill in COGNEE_BASE_URL, COGNEE_API_KEY, COGNEE_TENANT_ID
+uv sync
+uv run sentinel seed          # load historical failures into Cognee (~20s)
+uv run kiwi                   # start the REPL
 ```
 
-### 4. Run the CLI REPL
+Or visualize the live memory graph:
 ```bash
-pnpm kiwi
-# Or use the silent launchers:
-# CMD: kiwi
-# PowerShell: .\kiwi
+uv run streamlit run viz/graph_panel.py
 ```
+
+Full setup details: [HOW_TO_RUN.md](HOW_TO_RUN.md)
 
 ---
 
-## Codebase Documentation
+<!-- ## Architecture -->
 
-For in-depth developer orientation, refer to:
-* [Exploration Guide](docs/exploration_guide.md): Code orientation map and data pipeline flow.
-* [Subsystems Guide](docs/subsystems.md): Structural details of CLI, Backend, Memory, and Review engines.
-* [Tools Reference](docs/tools.md): Specs for Kiwi's execution modules.
+<!-- ```
+┌──────────────────────────────────────────────────────┐
+│                  Entry surfaces                      │
+│  uv run kiwi (REPL)  │  sentinel CLI  │  CI workflow │
+└──────────────┬────────────────┬────────────────┬─────┘
+               │                │                │
+               ▼                ▼                ▼
+     sentinel/kiwi_cli.py  sentinel/cli.py  .github/workflows/
+               │                │
+               └────────┬───────┘
+                        ▼
+           sentinel/cognee_client.py
+           POST /api/v1/remember  (write)
+           POST /api/v1/recall    (read)
+                        │
+                        ▼
+                  Cognee Cloud
+              (knowledge graph + embeddings)
+                        │
+               ┌────────┴────────┐
+               ▼                 ▼
+    sentinel/reviewer.py    viz/graph_panel.py
+    LLM draft + grounding   Streamlit live graph
+``` -->
+
+## Architecture
+
+![Architecture](assets/architecture.svg)
+
+> React + Ink frontend (`kiwi-ui/`) and FastAPI backend (`app/main.py`) exist in the repo but are paused — post-hackathon direction, not part of the current demo.
+
+<p align="center"> Built by <i><b><a href="http://app.notion.com/p/DeadEnd-Engineers-3139801ed37b80e1ac97e8c1ccabe0d0">Team 12'oCaffeine</a></b></i> </p>
